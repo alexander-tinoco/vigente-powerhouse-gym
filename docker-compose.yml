@@ -1,0 +1,73 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: vigente
+      POSTGRES_USER: vigente
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cambiar_en_produccion}
+    volumes:
+      - datos_postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigente"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  core:
+    build: ./apps/core
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./apps/core:/app
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: ./apps/core
+    command: celery -A config worker -l info
+    volumes:
+      - ./apps/core:/app
+    env_file: .env
+    depends_on:
+      - core
+
+  beat:
+    build: ./apps/core
+    command: celery -A config beat -l info
+    volumes:
+      - ./apps/core:/app
+    env_file: .env
+    depends_on:
+      - core
+
+  edge:
+    build: ./apps/edge
+    command: uvicorn main:app --host 0.0.0.0 --port 8100
+    volumes:
+      - ./apps/edge:/app
+    ports:
+      - "8100:8100"
+    env_file: .env
+
+  web:
+    build: ./apps/web
+    command: pnpm dev --host
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  datos_postgres:
