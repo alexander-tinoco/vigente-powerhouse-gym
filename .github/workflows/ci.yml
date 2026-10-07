@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Pruebas y linting del backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: vigente_test
+          POSTGRES_USER: vigente
+          POSTGRES_PASSWORD: vigente
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Linting con Ruff
+        run: ruff check .
+
+      - name: Formato con Ruff
+        run: ruff format --check .
+
+      - name: Pruebas
+        run: pytest --cov=apps/core --cov-report=term-missing
+        env:
+          DATABASE_URL: postgresql://vigente:vigente@localhost:5432/vigente_test
+
+  frontend:
+    name: Pruebas del panel y la app
+    runs-on: ubuntu-latest
+    # Se activa cuando el panel (pnpm) tenga su package.json en la raiz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        if: hashFiles('package.json') != ''
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: hashFiles('package.json') != ''
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Instalar dependencias
+        if: hashFiles('package.json') != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Linting
+        if: hashFiles('package.json') != ''
+        run: pnpm lint
+
+      - name: Pruebas
+        if: hashFiles('package.json') != ''
+        run: pnpm test
